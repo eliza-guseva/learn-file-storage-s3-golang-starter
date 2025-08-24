@@ -136,6 +136,7 @@ func (c Client) UpdateVideo(video Video) error {
 	_, err := c.db.Exec(
 		query,
 		video.Title,
+
 		video.Description,
 		&video.ThumbnailURL,
 		&video.VideoURL,
