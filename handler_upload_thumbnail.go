@@ -87,7 +87,12 @@ func (cfg *apiConfig) getFile(r *http.Request, w http.ResponseWriter) (io.ReadCl
 		respondWithError(w, http.StatusBadRequest, "Couldn't find thumbnail", err)
 		return nil, "", err
 	}
-	return file, header.Header.Get("Content-Type"), nil
+	mediaType := header.Header.Get("Content-Type")
+	if mediaType != "image/jpeg" && mediaType != "image/png" {
+		respondWithError(w, http.StatusBadRequest, "Invalid media type", nil)
+		return nil, "", fmt.Errorf("invalid media type: %s", mediaType)
+	}
+	return file, mediaType, nil
 }
 
 func writeThumbnailToAssets(videoID uuid.UUID, mediaType string, w http.ResponseWriter, file io.ReadCloser) string {
