@@ -1,7 +1,9 @@
 package main
 
 import (
+	"bytes"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 
@@ -26,13 +28,14 @@ func (cfg *apiConfig) handlerThumbnailGet(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	mediaType := strings.Split(*videoDB.ThumbnailURL, ";")[0]
-	data := strings.Split(*videoDB.ThumbnailURL, ",")[1]
-
+	thumbnailURL := *videoDB.ThumbnailURL
+	mediaType := strings.Split(thumbnailURL, ".")[1]
+	fmt.Println("in handlerGetThumbnail, thumbnailURL", thumbnailURL)
 	w.Header().Set("Content-Type", mediaType)
-	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(data)))
-
-	_, err = w.Write([]byte(data))
+	w.Header().Set("Content-Length", fmt.Sprintf("%d", len(*videoDB.ThumbnailURL)))
+	// read the image from thumbnailURL
+	imageDataReader := bytes.NewReader([]byte(thumbnailURL))
+	_, err = io.Copy(w, imageDataReader)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Error writing response", err)
 		return
