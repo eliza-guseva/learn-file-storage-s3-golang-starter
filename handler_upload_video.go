@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
-	"io"
-	"net/http"
-	"os"
+	"encoding/json"
 	"crypto/rand"
 	"encoding/hex"
+	"io"
 	"log/slog"
+	"net/http"
+	"os"
+	"os/exec"
+	"bytes"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
@@ -45,16 +48,33 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	osFile, err := os.CreateTemp("/tmp", videoID.String())
+	osFile, _ := os.CreateTemp("/tmp", videoID.String())
 	defer os.Remove(osFile.Name())
 	defer osFile.Close()
 	io.Copy(osFile, rFile)
 	osFile.Seek(0, 0)
 	randomBytes := make([]byte, 32)
 	_, _ = rand.Read(randomBytes)
+
+	// determine aspectRatio
+	aspectRatio, err := getVideoAspectRatio(osFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't get video aspect ratio", err)
+		return
+	}
+	var prefix string
+	switch aspectRatio {
+		case "16:9":
+			prefix = "landscape/"
+		case "9:16":
+			prefix = "portrait/"
+		default:
+			prefix = "other/"
+	}
+
 	output, err := cfg.s3Client.PutObject(context.Background(), &s3.PutObjectInput{
 		Bucket: aws.String(cfg.s3Bucket),
-		Key:    aws.String(hex.EncodeToString(randomBytes) + ".mp4"),
+		Key:    aws.String(prefix + hex.EncodeToString(randomBytes) + ".mp4"),
 		Body:   osFile,
 		ContentType: aws.String("video/mp4"),
 	})
@@ -65,7 +85,7 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 	slog.Info("uploaded video", "output", output)
 
-	newURL := "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + hex.EncodeToString(randomBytes) + ".mp4"
+	newURL := "https://" + cfg.s3Bucket + ".s3." + cfg.s3Region + ".amazonaws.com/" + prefix + hex.EncodeToString(randomBytes) + ".mp4"
 	videoDB.VideoURL = &newURL
 	err = cfg.db.UpdateVideo(
 		videoDB,
@@ -77,4 +97,25 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	respondWithJSON(w, http.StatusOK, videoDB)
 
 
+}
+
+func getVideoAspectRatio(filepath string) (string, error) {
+	cmd := exec.Command("ffprobe", "-v", "error", "-print_format", "json", "-show_streams", filepath)
+	slog.Info("ffprobe", "filepath", filepath)
+	slog.Info("ffprobe", "cmd", cmd)
+	cmd.Stdout = &bytes.Buffer{} 
+	err := cmd.Run()
+	if err != nil {
+		slog.Error("ffprobe error", "error", err)
+		return "", err
+	}
+	var jsonData map[string]interface{}
+	json.Unmarshal(cmd.Stdout.(*bytes.Buffer).Bytes(), &jsonData)
+	slog.Info("jsonData", "jsonData", jsonData)
+	aspectRatio := jsonData["streams"].([]interface{})[0].(map[string]interface{})["display_aspect_ratio"].(string)
+	if aspectRatio != "16:9" && aspectRatio != "9:16" {
+		aspectRatio = "other"
+	}
+	return aspectRatio, nil
+	
 }
