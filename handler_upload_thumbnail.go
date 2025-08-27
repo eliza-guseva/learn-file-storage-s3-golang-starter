@@ -7,6 +7,8 @@ import (
 	"net/http"
 	"os"
 	"strings"
+	"crypto/rand"
+	"encoding/base64"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
@@ -45,7 +47,7 @@ func (cfg *apiConfig) handlerUploadThumbnail(w http.ResponseWriter, r *http.Requ
 	videoDB := cfg.getVideoDB(videoID, userID, w)
 	if videoDB.ID == uuid.Nil {return}
 
-	fname := writeThumbnailToAssets(videoID, mediaType, w, file)
+	fname := writeThumbnailToAssets(mediaType, w, file)
 	if fname == "" {return}
 	// add the thumbnail to the videoDB)
 	thumbnailURL := "http://localhost:8091/" + fname
@@ -95,8 +97,16 @@ func (cfg *apiConfig) getFile(r *http.Request, w http.ResponseWriter) (io.ReadCl
 	return file, mediaType, nil
 }
 
-func writeThumbnailToAssets(videoID uuid.UUID, mediaType string, w http.ResponseWriter, file io.ReadCloser) string {
-	fname := "assets/" + videoID.String() + "." + strings.Split(mediaType, "/")[1]
+func writeThumbnailToAssets(mediaType string, w http.ResponseWriter, file io.ReadCloser) string {
+	randomBytes := make([]byte, 32)
+	_, err := rand.Read(randomBytes)
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't generate random string", err)
+		return ""
+	}
+	randomString := base64.RawURLEncoding.EncodeToString(randomBytes)
+
+	fname := "assets/" + randomString + "." + strings.Split(mediaType, "/")[1]
 	osFile, err := os.Create(fname)
 	if err != nil {
 		respondWithError(w, http.StatusInternalServerError, "Couldn't create file", err)

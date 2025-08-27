@@ -4,10 +4,29 @@ import (
 	"encoding/json"
 	"net/http"
 	"time"
+	"github.com/google/uuid"
 
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/auth"
 	"github.com/bootdotdev/learn-file-storage-s3-golang-starter/internal/database"
 )
+
+func (cfg *apiConfig) AuthUser(w http.ResponseWriter, r *http.Request) uuid.UUID {
+
+	token, err := auth.GetBearerToken(r.Header)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't find JWT", err)
+		return uuid.Nil
+	}
+
+	userID, err := auth.ValidateJWT(token, cfg.jwtSecret)
+	if err != nil {
+		respondWithError(w, http.StatusUnauthorized, "Couldn't validate JWT", err)
+		return uuid.Nil
+	}
+	return userID
+}
+
+
 
 func (cfg *apiConfig) handlerLogin(w http.ResponseWriter, r *http.Request) {
 	type parameters struct {
