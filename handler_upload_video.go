@@ -49,12 +49,22 @@ func (cfg *apiConfig) handlerUploadVideo(w http.ResponseWriter, r *http.Request)
 	}
 
 	osFile, _ := os.CreateTemp("/tmp", videoID.String())
-	defer os.Remove(osFile.Name())
-	defer osFile.Close()
 	io.Copy(osFile, rFile)
 	osFile.Seek(0, 0)
 	randomBytes := make([]byte, 32)
 	_, _ = rand.Read(randomBytes)
+
+	processedFilepath, err := processVideoForFastStart(osFile.Name())
+	if err != nil {
+		respondWithError(w, http.StatusInternalServerError, "Couldn't process video", err)
+		return
+	}
+	os.Remove(osFile.Name())
+	osFile.Close()
+	osFile, _ = os.Open(processedFilepath)
+	
+	defer os.Remove(osFile.Name())
+	defer osFile.Close()
 
 	// determine aspectRatio
 	aspectRatio, err := getVideoAspectRatio(osFile.Name())
@@ -119,3 +129,14 @@ func getVideoAspectRatio(filepath string) (string, error) {
 	return aspectRatio, nil
 	
 }
+
+func processVideoForFastStart(filepath string) (string, error) {
+	newFilepath := filepath + ".processed"
+	cmd := exec.Command("ffmpeg", "-i", filepath, "-c", "copy", "-movflags", "faststart", "-f", "mp4", newFilepath)
+	err := cmd.Run()
+	if err != nil {
+		return "", err
+	}
+	return newFilepath, nil
+}
+
